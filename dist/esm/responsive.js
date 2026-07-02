@@ -7,14 +7,7 @@
  * snapshotted at import time. Pair with the `useResponsive` hook (see
  * `./theme`) to have components re-render when the dimensions change.
  */
-
-import { Dimensions, PixelRatio, ScaledSize } from 'react-native';
-
-export interface Dimensionsable {
-  width: number;
-  height: number;
-}
-
+import { Dimensions, PixelRatio } from 'react-native';
 /**
  * Fallback window size (iPhone X class) used only if the platform cannot report
  * real dimensions (e.g. very early startup, tests, or a non-RN environment).
@@ -22,22 +15,18 @@ export interface Dimensionsable {
  */
 export const FALLBACK_WIDTH = 375;
 export const FALLBACK_HEIGHT = 812;
-
 /** A positive, finite number, or the fallback if the input is neither. */
-const safeSize = (value: unknown, fallback: number): number =>
-  typeof value === 'number' && isFinite(value) && value > 0 ? value : fallback;
-
+const safeSize = (value, fallback) => typeof value === 'number' && isFinite(value) && value > 0 ? value : fallback;
 /**
  * Monotonic counter bumped whenever a configuration setter changes global scale
  * behaviour. Token maps mix it into their cache keys so cached values are
  * invalidated when the guideline, reference caps, or font-scale flag change.
  */
 let CONFIG_VERSION = 0;
-export const getConfigVersion = (): number => CONFIG_VERSION;
-const bumpConfig = (): void => {
-  CONFIG_VERSION++;
+export const getConfigVersion = () => CONFIG_VERSION;
+const bumpConfig = () => {
+    CONFIG_VERSION++;
 };
-
 /**
  * Guideline base dimensions used as the reference for `horizontalScale` /
  * `verticalScale`. Based on a standard mid-size handset (iPhone X class).
@@ -45,17 +34,15 @@ const bumpConfig = (): void => {
  */
 export let GUIDELINE_BASE_WIDTH = FALLBACK_WIDTH;
 export let GUIDELINE_BASE_HEIGHT = FALLBACK_HEIGHT;
-
 /**
  * Change the reference device used by the linear scale helpers. Non-positive or
  * non-finite values are ignored so the scale math can never divide by zero.
  */
-export const setGuidelineBaseDimensions = (width: number, height: number): void => {
-  GUIDELINE_BASE_WIDTH = safeSize(width, GUIDELINE_BASE_WIDTH);
-  GUIDELINE_BASE_HEIGHT = safeSize(height, GUIDELINE_BASE_HEIGHT);
-  bumpConfig();
+export const setGuidelineBaseDimensions = (width, height) => {
+    GUIDELINE_BASE_WIDTH = safeSize(width, GUIDELINE_BASE_WIDTH);
+    GUIDELINE_BASE_HEIGHT = safeSize(height, GUIDELINE_BASE_HEIGHT);
+    bumpConfig();
 };
-
 /**
  * Upper bounds applied to the reference dimension used by the fraction-based
  * tokens, so values stop growing on very large surfaces (desktop RN, TV,
@@ -64,18 +51,18 @@ export const setGuidelineBaseDimensions = (width: number, height: number): void 
  */
 export let MAX_REFERENCE_SHORT = Infinity;
 export let MAX_REFERENCE_LONG = Infinity;
-
 /**
  * Cap the reference short/long side used by the fraction tokens. Pass a
  * non-positive/omitted value to leave that bound unchanged. Use e.g.
  * `setMaxReference(1024, 1366)` (iPad Pro class) to tame oversized surfaces.
  */
-export const setMaxReference = (short?: number, long?: number): void => {
-  if (typeof short === 'number' && short > 0) MAX_REFERENCE_SHORT = short;
-  if (typeof long === 'number' && long > 0) MAX_REFERENCE_LONG = long;
-  bumpConfig();
+export const setMaxReference = (short, long) => {
+    if (typeof short === 'number' && short > 0)
+        MAX_REFERENCE_SHORT = short;
+    if (typeof long === 'number' && long > 0)
+        MAX_REFERENCE_LONG = long;
+    bumpConfig();
 };
-
 /**
  * When enabled, font tokens are multiplied by the OS text-size setting
  * (`PixelRatio.getFontScale()`) so the app honours the user's accessibility
@@ -83,87 +70,76 @@ export const setMaxReference = (short?: number, long?: number): void => {
  * {@link setRespectFontScale}.
  */
 export let RESPECT_FONT_SCALE = false;
-export const setRespectFontScale = (value: boolean): void => {
-  RESPECT_FONT_SCALE = !!value;
-  bumpConfig();
+export const setRespectFontScale = (value) => {
+    RESPECT_FONT_SCALE = !!value;
+    bumpConfig();
 };
-
 /** The OS font-scale multiplier, or 1 if unavailable. */
-export const getFontScale = (): number => {
-  try {
-    const f = PixelRatio.getFontScale();
-    return typeof f === 'number' && isFinite(f) && f > 0 ? f : 1;
-  } catch {
-    return 1;
-  }
+export const getFontScale = () => {
+    try {
+        const f = PixelRatio.getFontScale();
+        return typeof f === 'number' && isFinite(f) && f > 0 ? f : 1;
+    }
+    catch (_a) {
+        return 1;
+    }
 };
-
 /**
  * Snap a value to the nearest physical pixel so layout/text edges stay crisp
  * instead of landing on a sub-pixel boundary. Falls back to `Math.round` when
  * `PixelRatio` is unavailable.
  */
-export const roundToPixel = (value: number): number => {
-  try {
-    return PixelRatio.roundToNearestPixel(value);
-  } catch {
-    return Math.round(value);
-  }
+export const roundToPixel = (value) => {
+    try {
+        return PixelRatio.roundToNearestPixel(value);
+    }
+    catch (_a) {
+        return Math.round(value);
+    }
 };
-
 /** Constrain `value` to the `[min, max]` range. */
-export const clamp = (value: number, min = -Infinity, max = Infinity): number =>
-  Math.min(Math.max(value, min), max);
-
+export const clamp = (value, min = -Infinity, max = Infinity) => Math.min(Math.max(value, min), max);
 /**
  * Read the live window dimensions. Never throws: falls back to sane defaults if
  * `Dimensions` is unavailable or reports invalid values.
  */
-export const getScreenDimensions = (): Dimensionsable => {
-  try {
-    const win = Dimensions.get('window');
-    return {
-      width: safeSize(win && win.width, FALLBACK_WIDTH),
-      height: safeSize(win && win.height, FALLBACK_HEIGHT),
-    };
-  } catch {
-    return { width: FALLBACK_WIDTH, height: FALLBACK_HEIGHT };
-  }
+export const getScreenDimensions = () => {
+    try {
+        const win = Dimensions.get('window');
+        return {
+            width: safeSize(win && win.width, FALLBACK_WIDTH),
+            height: safeSize(win && win.height, FALLBACK_HEIGHT),
+        };
+    }
+    catch (_a) {
+        return { width: FALLBACK_WIDTH, height: FALLBACK_HEIGHT };
+    }
 };
-
 /** Live window width. */
-export const getScreenWidth = (): number => getScreenDimensions().width;
-
+export const getScreenWidth = () => getScreenDimensions().width;
 /** Live window height. */
-export const getScreenHeight = (): number => getScreenDimensions().height;
-
+export const getScreenHeight = () => getScreenDimensions().height;
 /** Live shortest window side (orientation-independent). */
-export const getShortSide = (): number => {
-  const d = getScreenDimensions();
-  return Math.min(d.width, d.height);
+export const getShortSide = () => {
+    const d = getScreenDimensions();
+    return Math.min(d.width, d.height);
 };
-
 /** Live longest window side (orientation-independent). */
-export const getLongSide = (): number => {
-  const d = getScreenDimensions();
-  return Math.max(d.width, d.height);
+export const getLongSide = () => {
+    const d = getScreenDimensions();
+    return Math.max(d.width, d.height);
 };
-
 /**
  * Reference short side used by fraction tokens: the window's short side,
  * clamped to {@link MAX_REFERENCE_SHORT}. Orientation-independent, so tokens
  * stay stable across rotation.
  */
-export const getReferenceShort = (dims: Dimensionsable = getScreenDimensions()): number =>
-  Math.min(Math.min(dims.width, dims.height), MAX_REFERENCE_SHORT);
-
+export const getReferenceShort = (dims = getScreenDimensions()) => Math.min(Math.min(dims.width, dims.height), MAX_REFERENCE_SHORT);
 /**
  * Reference long side used by fraction tokens: the window's long side, clamped
  * to {@link MAX_REFERENCE_LONG}. Orientation-independent.
  */
-export const getReferenceLong = (dims: Dimensionsable = getScreenDimensions()): number =>
-  Math.min(Math.max(dims.width, dims.height), MAX_REFERENCE_LONG);
-
+export const getReferenceLong = (dims = getScreenDimensions()) => Math.min(Math.max(dims.width, dims.height), MAX_REFERENCE_LONG);
 /**
  * Snapshot of the window size at import time.
  *
@@ -174,37 +150,33 @@ export const getReferenceLong = (dims: Dimensionsable = getScreenDimensions()): 
 export const SCREEN_WIDTH = getScreenDimensions().width;
 /** @deprecated See {@link SCREEN_WIDTH}. */
 export const SCREEN_HEIGHT = getScreenDimensions().height;
-
 /**
  * Subscribe to window dimension changes. Returns an unsubscribe function.
  * Never throws: if the platform does not support the listener, the returned
  * unsubscribe is a safe no-op.
  */
-export const onDimensionsChange = (listener: (window: Dimensionsable) => void): (() => void) => {
-  try {
-    const sub = Dimensions.addEventListener('change', ({ window }: { window: ScaledSize }) => {
-      listener({ width: window.width, height: window.height });
-    });
-    return () => {
-      try {
-        sub.remove();
-      } catch {
-        /* ignore */
-      }
-    };
-  } catch {
-    return () => {
-      /* no-op */
-    };
-  }
+export const onDimensionsChange = (listener) => {
+    try {
+        const sub = Dimensions.addEventListener('change', ({ window }) => {
+            listener({ width: window.width, height: window.height });
+        });
+        return () => {
+            try {
+                sub.remove();
+            }
+            catch (_a) {
+                /* ignore */
+            }
+        };
+    }
+    catch (_a) {
+        return () => {
+            /* no-op */
+        };
+    }
 };
-
 /** True when the given window is wider than it is tall. */
-export const isLandscape = (
-  width: number = getScreenWidth(),
-  height: number = getScreenHeight(),
-): boolean => width > height;
-
+export const isLandscape = (width = getScreenWidth(), height = getScreenHeight()) => width > height;
 /**
  * Guideline base dimensions matched to the *current orientation*.
  *
@@ -214,72 +186,46 @@ export const isLandscape = (
  * no longer divides the (now long) width by the portrait base width, which
  * would otherwise inflate every `horizontalScale` result.
  */
-const orientedBase = (width: number, height: number): { baseWidth: number; baseHeight: number } => {
-  const gShort = Math.min(GUIDELINE_BASE_WIDTH, GUIDELINE_BASE_HEIGHT);
-  const gLong = Math.max(GUIDELINE_BASE_WIDTH, GUIDELINE_BASE_HEIGHT);
-  return isLandscape(width, height)
-    ? { baseWidth: gLong, baseHeight: gShort }
-    : { baseWidth: gShort, baseHeight: gLong };
+const orientedBase = (width, height) => {
+    const gShort = Math.min(GUIDELINE_BASE_WIDTH, GUIDELINE_BASE_HEIGHT);
+    const gLong = Math.max(GUIDELINE_BASE_WIDTH, GUIDELINE_BASE_HEIGHT);
+    return isLandscape(width, height)
+        ? { baseWidth: gLong, baseHeight: gShort }
+        : { baseWidth: gShort, baseHeight: gLong };
 };
-
 /**
  * Linear scale relative to the guideline width, orientation-aware so it stays
  * correct in both portrait and landscape. Result is snapped to the nearest
  * physical pixel.
  */
-export const horizontalScale = (
-  size: number,
-  width: number = getScreenWidth(),
-  height: number = getScreenHeight(),
-): number => roundToPixel((width / orientedBase(width, height).baseWidth) * size);
-
+export const horizontalScale = (size, width = getScreenWidth(), height = getScreenHeight()) => roundToPixel((width / orientedBase(width, height).baseWidth) * size);
 /**
  * Linear scale relative to the guideline height, orientation-aware so it stays
  * correct in both portrait and landscape. Result is snapped to the nearest
  * physical pixel.
  */
-export const verticalScale = (
-  size: number,
-  height: number = getScreenHeight(),
-  width: number = getScreenWidth(),
-): number => roundToPixel((height / orientedBase(width, height).baseHeight) * size);
-
+export const verticalScale = (size, height = getScreenHeight(), width = getScreenWidth()) => roundToPixel((height / orientedBase(width, height).baseHeight) * size);
 /**
  * Scale that only partially applies the linear factor — useful for font sizes
  * and paddings that should grow, but not as aggressively as the raw scale.
  * Orientation-aware and pixel-snapped.
  */
-export const moderateScale = (
-  size: number,
-  factor = 0.5,
-  width: number = getScreenWidth(),
-  height: number = getScreenHeight(),
-): number => {
-  // Compute against the raw (unsnapped) linear scale so the factor blend is
-  // exact, then snap once at the end.
-  const linear = (width / orientedBase(width, height).baseWidth) * size;
-  return roundToPixel(size + (linear - size) * factor);
+export const moderateScale = (size, factor = 0.5, width = getScreenWidth(), height = getScreenHeight()) => {
+    // Compute against the raw (unsnapped) linear scale so the factor blend is
+    // exact, then snap once at the end.
+    const linear = (width / orientedBase(width, height).baseWidth) * size;
+    return roundToPixel(size + (linear - size) * factor);
 };
-
 /** Font size as a fraction of the given reference dimension. */
-export const calculateFont = (value: number, width: number = getScreenWidth()): number =>
-  width * value;
-
+export const calculateFont = (value, width = getScreenWidth()) => width * value;
 /** Width as a fraction of the given reference dimension. */
-export const calculateWidth = (value: number, width: number = getScreenWidth()): number =>
-  width * value;
-
+export const calculateWidth = (value, width = getScreenWidth()) => width * value;
 /** Height as a fraction of the given reference dimension. */
-export const calculateHeight = (value: number, height: number = getScreenHeight()): number =>
-  height * value;
-
+export const calculateHeight = (value, height = getScreenHeight()) => height * value;
 /** A circle sized as a fraction of the given reference dimension. */
-export const calculateDvales = (
-  value: number,
-  width: number = getScreenWidth(),
-): { CdWidth: number; CdHeight: number; CdBorderRadius: number } => {
-  const CdWidth = width * value;
-  const CdHeight = CdWidth;
-  const CdBorderRadius = CdWidth / 2;
-  return { CdWidth, CdHeight, CdBorderRadius };
+export const calculateDvales = (value, width = getScreenWidth()) => {
+    const CdWidth = width * value;
+    const CdHeight = CdWidth;
+    const CdBorderRadius = CdWidth / 2;
+    return { CdWidth, CdHeight, CdBorderRadius };
 };

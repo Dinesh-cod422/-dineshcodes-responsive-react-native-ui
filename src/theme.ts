@@ -1,118 +1,331 @@
 /**
  * Responsive design tokens
  *
- * Scale-aware constants (colors, fonts, sizes, radii) derived from the current
- * screen dimensions via the helpers in `../utils/responsive`. Sizes adapt across
- * phones and tablets.
+ * Scale-aware constants (fonts, sizes, radii) derived from the *current* screen
+ * dimensions via the helpers in `./responsive`. Sizes adapt across phones and
+ * tablets and stay correct across runtime dimension changes.
  *
- * Each numeric token resolves to one of three raw fractions — phone, tablet, or
- * iPad — through the `forDevice` selector below. Because iPad and Android tablet
- * usually share a value, the `pad` argument defaults to `tablet`; only pass it
- * when the iPad value genuinely differs.
+ * Numeric token maps (FONTSIZE, HScale, …) are **lazy**: each entry is computed
+ * on access from the live window size rather than eagerly precomputed at import.
+ * Results are memoised per (dimension, config) so repeated reads in a render are
+ * cheap. This keeps import cost near-zero and means every read reflects the
+ * current dimensions.
  *
- * Tablet detection uses `react-native-device-info` (`DeviceInfo.isTablet()`).
+ * For components that must re-render on rotation / resize, use {@link useResponsive},
+ * which returns the same token surface bound to live dimensions.
+ *
+ * Orientation stability: font/width/radius tokens are derived from the window's
+ * **short side** and height tokens from its **long side**, so their values do
+ * not jump when the device rotates between portrait and landscape. The linear
+ * `horizontalScale`/`verticalScale` helpers remain orientation-aware too.
+ *
+ * Tablet detection is pure JavaScript (no native modules): a device counts as a
+ * tablet when its smallest side is at least 600dp — the same threshold Android
+ * uses for `sw600dp` layouts, and true for every iPad.
  */
 
-import { Platform } from 'react-native';
-import DeviceInfo from 'react-native-device-info';
+import { useMemo } from 'react';
+import { Platform, useWindowDimensions } from 'react-native';
 import {
+  Dimensionsable,
   calculateDvales,
   calculateFont,
-  calculateHeight,
   calculateWidth,
+  getConfigVersion,
+  getFontScale,
+  getReferenceLong,
+  getReferenceShort,
+  getScreenDimensions,
+  roundToPixel,
+  RESPECT_FONT_SCALE,
 } from './responsive';
 
-const isTablet = DeviceInfo.isTablet();
+/** Smallest side (in dp) at or above which a device is treated as a tablet. */
+export const TABLET_BREAKPOINT = 600;
+
+/** Pure-JS tablet check for a given window size (orientation-independent). */
+export const isTabletDimensions = (dims: Dimensionsable): boolean =>
+  Math.min(dims.width, dims.height) >= TABLET_BREAKPOINT;
+
+/**
+ * Whether the current device is a tablet, evaluated against the *live* window
+ * size on each call. Stays correct across runtime changes that cross the tablet
+ * breakpoint — split-screen, foldables, resizable windows — not just rotation.
+ * Prefer this (or the `isTablet` field from {@link useResponsive}) over the
+ * {@link isTablet} snapshot.
+ */
+export const getIsTablet = (): boolean => isTabletDimensions(getScreenDimensions());
+
+/**
+ * Whether the device was a tablet **at import time**. Uses the smallest window
+ * side, so it is stable across rotation but will not reflect later split-screen
+ * / foldable / resize changes.
+ *
+ * @deprecated Snapshot value. Use {@link getIsTablet} for a live check, or the
+ * `isTablet` field returned by {@link useResponsive} inside components.
+ */
+export const isTablet: boolean = getIsTablet();
 
 // `Platform.isPad` is iOS-only; guard the access so it type-checks on Android too.
-const isPad = Platform.OS === 'ios' && (Platform as { isPad?: boolean }).isPad === true;
+export const isPad: boolean =
+  Platform.OS === 'ios' && (Platform as { isPad?: boolean }).isPad === true;
+
+/** Resolve a per-device fraction for a specific window size. */
+const pick = (dims: Dimensionsable, phone: number, tablet: number, pad: number = tablet): number =>
+  isPad ? pad : isTabletDimensions(dims) ? tablet : phone;
 
 /**
  * Pick the raw scale fraction for the active device class. `pad` defaults to
  * `tablet` since the two share a value for the vast majority of tokens.
+ *
+ * Reads the *live* window size on each call (via `pick`) so the choice stays
+ * correct across runtime changes — split-screen, foldables, resizable windows —
+ * rather than being frozen to the device class at import time.
  */
-const forDevice = (phone: number, tablet: number, pad: number = tablet): number =>
-  isPad ? pad : isTablet ? tablet : phone;
+export const forDevice = (phone: number, tablet: number, pad: number = tablet): number =>
+  pick(getScreenDimensions(), phone, tablet, pad);
 
-const font = (phone: number, tablet: number, pad?: number): number =>
-  calculateFont(forDevice(phone, tablet, pad));
+// ---------------------------------------------------------------------------
+// Breakpoints
+// ---------------------------------------------------------------------------
 
-const width = (phone: number, tablet: number, pad?: number): number =>
-  calculateWidth(forDevice(phone, tablet, pad));
+/** Ordered layout breakpoints (min current-width, in dp). */
+export type Breakpoint = 'sm' | 'md' | 'lg' | 'xl';
 
-const height = (phone: number, tablet: number, pad?: number): number =>
-  calculateHeight(forDevice(phone, tablet, pad));
+/** Mutable min-width thresholds for each breakpoint. Override via {@link setBreakpoints}. */
+export const BREAKPOINTS: Record<Breakpoint, number> = { sm: 0, md: 600, lg: 900, xl: 1200 };
 
-export const COLORS = {
-  mainWhite: '#FFF',
-  mainBlue: '#3B78FF',
-  mainBlueV1: '#0D3283',
-  mainBlack: '#000',
-  primaryRedHex: '#DC3535',
-  primaryOrangeHex: '#D17842',
-  primaryBlackHex: '#0C0F14',
-  primaryDarkGreyHex: '#141921',
-  secondaryDarkGreyHex: '#21262E',
-  primaryGreyHex: '#252A32',
-  secondaryGreyHex: '#252A32',
-  primaryLightGreyHex: '#52555A',
-  secondaryLightGreyHex: '#AEAEAE',
-  primaryBlackRGBA: 'rgba(12,15,20,0.5)',
-  secondaryBlackRGBA: 'rgba(0,0,0,0.7)',
-  touchColor: '#f2f2f2',
-  touchColor1: '#dbdbdb',
-  blackDarkColor1: '#000',
-  blackDarkColor2: '#404040',
-} as const;
+/** Override one or more breakpoint thresholds (dp). */
+export const setBreakpoints = (overrides: Partial<Record<Breakpoint, number>>): void => {
+  for (const key of Object.keys(overrides) as Breakpoint[]) {
+    const v = overrides[key];
+    if (typeof v === 'number' && isFinite(v) && v >= 0) BREAKPOINTS[key] = v;
+  }
+};
 
-export const FONTFAMILY = {
-  Archivo_black: 'Archivo-Black',
-  Archivo_bold: 'Archivo-Bold',
-  Archivo_extrabold: 'Archivo-ExtraBold',
-  Archivo_extralight: 'Archivo-ExtraLight',
-  Archivo_light: 'Archivo-Light',
-  Archivo_medium: 'Archivo-Medium',
-  Archivo_regular: 'Archivo-Regular',
-  Archivo_semibold: 'Archivo-SemiBold',
-  Archivo_thin: 'Archivo-Thin',
-} as const;
+/**
+ * Active breakpoint for a window, based on its *current width* (so landscape
+ * reports a wider breakpoint than portrait, as expected for layout decisions).
+ */
+export const getBreakpoint = (dims: Dimensionsable = getScreenDimensions()): Breakpoint => {
+  const w = dims.width;
+  if (w >= BREAKPOINTS.xl) return 'xl';
+  if (w >= BREAKPOINTS.lg) return 'lg';
+  if (w >= BREAKPOINTS.md) return 'md';
+  return 'sm';
+};
 
+const BP_ORDER: Breakpoint[] = ['sm', 'md', 'lg', 'xl'];
+
+/**
+ * Pick the value for the active breakpoint, falling back to the nearest smaller
+ * breakpoint that is defined (mobile-first cascade). Returns `undefined` if no
+ * matching or smaller value exists.
+ */
+export const selectByBreakpoint = <T>(
+  values: Partial<Record<Breakpoint, T>>,
+  dims: Dimensionsable = getScreenDimensions(),
+): T | undefined => {
+  const active = getBreakpoint(dims);
+  for (let i = BP_ORDER.indexOf(active); i >= 0; i--) {
+    const v = values[BP_ORDER[i]];
+    if (v !== undefined) return v;
+  }
+  return undefined;
+};
+
+// ---------------------------------------------------------------------------
+// Lazy numeric token maps
+// ---------------------------------------------------------------------------
 
 type FontSizeMap = { [key: `size_${number}`]: number };
-export const FONTSIZE = {} as FontSizeMap;
-for (let i = 1; i <= 100; i++) {
-  FONTSIZE[`size_${i}` as keyof FontSizeMap] = font(i / 440, i / 500);
-}
-
 type HScaleMap = { [key: `Width_${number}`]: number };
-export const HScale = {} as HScaleMap;
-for (let i = 1; i <= 400; i++) {
-  const val = i / 450;
-  HScale[`Width_${i}` as keyof HScaleMap] = width(val, val);
-}
-
 type VScaleMap = { [key: `Height_${number}`]: number };
-export const VScale = {} as VScaleMap;
-for (let i = 1; i <= 800; i++) {
-  const val = i / 1000;
-  VScale[`Height_${i}` as keyof VScaleMap] = height(val, val);
-}
-
 type BorderRadiusMap = { [key: `radius_${number}`]: number };
-export const BORDER_RADIUS = {} as BorderRadiusMap;
-for (let i = 1; i <= 200; i++) {
-  const val = i / 1000;
-  BORDER_RADIUS[`radius_${i}` as keyof BorderRadiusMap] = height(val, val);
-}
-
 type IconSizeMap = { [key: `iconSize_${number}`]: number };
-export const IconSize = {} as IconSizeMap;
-for (let i = 1; i <= 200; i++) {
-  IconSize[`iconSize_${i}` as keyof IconSizeMap] = font(i / 440, i / 500);
+type DvaluesMap = { [key: `Dvalues_${number}`]: ReturnType<typeof calculateDvales> };
+
+/** Cap on cached entries per map, so a device resized continuously never leaks. */
+const CACHE_LIMIT = 4096;
+
+/**
+ * Build a lazy, dynamic token map. Entries `${prefix}_${i}` for `1 <= i <= max`
+ * are computed on access from the dimensions returned by `getDims`, so values
+ * always reflect the current (or bound) screen size and nothing is precomputed.
+ * Results are memoised per (width, height, config version); the cache is cleared
+ * wholesale if it grows past {@link CACHE_LIMIT}.
+ */
+const numericMap = <T>(
+  prefix: string,
+  max: number,
+  compute: (i: number, dims: Dimensionsable) => T,
+  getDims: () => Dimensionsable,
+): Record<string, T> => {
+  const re = new RegExp(`^${prefix}_(\\d+)$`);
+  const cache = new Map<string, T>();
+  const indexOf = (prop: string | symbol): number | null => {
+    if (typeof prop !== 'string') return null;
+    const m = re.exec(prop);
+    if (!m) return null;
+    const i = Number(m[1]);
+    return i >= 1 && i <= max ? i : null;
+  };
+
+  return new Proxy({} as Record<string, T>, {
+    get(_target, prop) {
+      const i = indexOf(prop);
+      if (i === null) return undefined;
+      const d = getDims();
+      const key = `${d.width}x${d.height}:${getConfigVersion()}:${i}`;
+      const hit = cache.get(key);
+      if (hit !== undefined) return hit;
+      const value = compute(i, d);
+      if (cache.size >= CACHE_LIMIT) cache.clear();
+      cache.set(key, value);
+      return value;
+    },
+    has(_target, prop) {
+      return indexOf(prop) !== null;
+    },
+    ownKeys() {
+      const keys: string[] = [];
+      for (let i = 1; i <= max; i++) keys.push(`${prefix}_${i}`);
+      return keys;
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      return indexOf(prop) === null ? undefined : { enumerable: true, configurable: true };
+    },
+  });
+};
+
+/** Apply optional OS font-scale, then snap to the nearest pixel. */
+const finalizeFont = (value: number): number =>
+  roundToPixel(RESPECT_FONT_SCALE ? value * getFontScale() : value);
+
+/** The complete responsive token surface bound to a dimensions source. */
+export interface ResponsiveTokens {
+  width: number;
+  height: number;
+  isTablet: boolean;
+  isPad: boolean;
+  isLandscape: boolean;
+  breakpoint: Breakpoint;
+  FONTSIZE: FontSizeMap;
+  HScale: HScaleMap;
+  VScale: VScaleMap;
+  BORDER_RADIUS: BorderRadiusMap;
+  IconSize: IconSizeMap;
+  Dvalues: DvaluesMap;
 }
 
-type DvaluesMap = { [key: `Dvalues_${number}`]: ReturnType<typeof calculateDvales> };
-export const Dvalues = {} as DvaluesMap;
-for (let i = 1; i <= 400; i++) {
-  Dvalues[`Dvalues_${i}` as keyof DvaluesMap] = calculateDvales(i / 450);
-}
+/**
+ * Build the full token surface bound to a `getDims` source. Used for both the
+ * live module-level exports (source = live window) and {@link useResponsive}
+ * (source = the hook's current dimensions).
+ *
+ * Font/width/radius tokens use the reference **short** side and height tokens
+ * the reference **long** side, so values are orientation-stable and clamped on
+ * oversized surfaces (see `setMaxReference`).
+ */
+const buildTokens = (getDims: () => Dimensionsable): ResponsiveTokens => ({
+  get width() {
+    return getDims().width;
+  },
+  get height() {
+    return getDims().height;
+  },
+  get isTablet() {
+    return isTabletDimensions(getDims());
+  },
+  isPad,
+  get isLandscape() {
+    const d = getDims();
+    return d.width > d.height;
+  },
+  get breakpoint() {
+    return getBreakpoint(getDims());
+  },
+  FONTSIZE: numericMap(
+    'size',
+    100,
+    (i, d) => finalizeFont(calculateFont(pick(d, i / 440, i / 500), getReferenceShort(d))),
+    getDims,
+  ) as unknown as FontSizeMap,
+  HScale: numericMap(
+    'Width',
+    400,
+    (i, d) => roundToPixel(calculateWidth(i / 450, getReferenceShort(d))),
+    getDims,
+  ) as unknown as HScaleMap,
+  VScale: numericMap(
+    'Height',
+    800,
+    (i, d) => roundToPixel(calculateWidth(i / 1000, getReferenceLong(d))),
+    getDims,
+  ) as unknown as VScaleMap,
+  BORDER_RADIUS: numericMap(
+    'radius',
+    200,
+    (i, d) => roundToPixel(calculateWidth(i / 1000, getReferenceShort(d))),
+    getDims,
+  ) as unknown as BorderRadiusMap,
+  IconSize: numericMap(
+    'iconSize',
+    200,
+    (i, d) => finalizeFont(calculateFont(pick(d, i / 440, i / 500), getReferenceShort(d))),
+    getDims,
+  ) as unknown as IconSizeMap,
+  Dvalues: numericMap(
+    'Dvalues',
+    400,
+    (i, d) => {
+      const dv = calculateDvales(i / 450, getReferenceShort(d));
+      return {
+        CdWidth: roundToPixel(dv.CdWidth),
+        CdHeight: roundToPixel(dv.CdHeight),
+        CdBorderRadius: roundToPixel(dv.CdBorderRadius),
+      };
+    },
+    getDims,
+  ) as unknown as DvaluesMap,
+});
+
+/** Build a token surface bound to a fixed set of dimensions. */
+export const createResponsive = (dimensions: Dimensionsable): ResponsiveTokens =>
+  buildTokens(() => dimensions);
+
+// Live, module-level token surface. Every access reads the current window size.
+const live = buildTokens(getScreenDimensions);
+
+export const FONTSIZE = live.FONTSIZE;
+export const HScale = live.HScale;
+export const VScale = live.VScale;
+export const BORDER_RADIUS = live.BORDER_RADIUS;
+export const IconSize = live.IconSize;
+export const Dvalues = live.Dvalues;
+
+/**
+ * React hook returning the full token surface bound to the current window
+ * dimensions. Components using it re-render on rotation / resize so tokens
+ * used inside `StyleSheet.create` or inline styles stay correct.
+ */
+export const useResponsive = (): ResponsiveTokens => {
+  const win = useWindowDimensions();
+  // Guard against a transient 0 / NaN from the platform on first render.
+  const fallback = getScreenDimensions();
+  const width = win.width > 0 ? win.width : fallback.width;
+  const height = win.height > 0 ? win.height : fallback.height;
+  return useMemo(() => createResponsive({ width, height }), [width, height]);
+};
+
+/**
+ * React hook returning the active {@link Breakpoint}, recomputed when the window
+ * width crosses a threshold on rotation / resize.
+ */
+export const useBreakpoint = (): Breakpoint => {
+  const win = useWindowDimensions();
+  const fallback = getScreenDimensions();
+  const width = win.width > 0 ? win.width : fallback.width;
+  const height = win.height > 0 ? win.height : fallback.height;
+  return useMemo(() => getBreakpoint({ width, height }), [width, height]);
+};
